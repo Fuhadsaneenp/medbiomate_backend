@@ -1,0 +1,23 @@
+{
+  "name": "medbiomate-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "description": "Medbiomate Backend API and Admin Service",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "sync:logos": "node scripts/sync-employer-logos.mjs",
+    "sync:media": "node scripts/sync-wordpress-media.mjs",
+    "check": "node --check server.mjs && node --check seo-api.mjs && node --check seo-job-pages.mjs",
+    "test:seo": "node --test seo-job-pages.test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1143.0",
+    "google-auth-library": "^11.2.0",
+    "mammoth": "^1.13.0",
+    "mysql2": "^3.12.0",
+    "pdfjs-dist": "^6.4.299"
+  }
+}

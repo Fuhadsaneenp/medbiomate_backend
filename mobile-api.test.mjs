@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {handleMobileApi} from './mobile-api.mjs';
+const fixture=()=>{const db={users:[{id:'one',email:'one@example.com'},{id:'two',email:'two@example.com'}],resumes:[{id:'cv',userId:'two',state:{}}]};const sessions=new Map([['valid',{userId:'one'}]]);let response;const ctx={readLocalDb:async()=>db,writeLocalDb:async()=>{},sessions,readJsonBody:async req=>req.body,sendJson:async(req,res,status,body)=>{response={status,body}},wpDb:{query:async()=>[[{id:1,name:'Technology',count:5}]]}};return{db,run:async(path,method='GET',body={},token='valid')=>{await handleMobileApi({method,body,headers:{authorization:`Bearer ${token}`}}, {setHeader(){}},new URL('https://test/api/mobile'+path),ctx);return response}}};
+test('rejects unauthenticated candidate data',async()=>{const f=fixture();assert.equal((await f.run('/candidate/data','GET',{},'invalid')).status,401)});
+test('profile writes use authenticated user, not supplied user ID',async()=>{const f=fixture();await f.run('/candidate/data','POST',{user_id:'two',data:{profile:{name:'Candidate'}}});assert.equal(f.db.users[0].profile.name,'Candidate');assert.equal(f.db.users[1].profile,undefined)});
+test('CV deletion cannot remove another candidate resume',async()=>{const f=fixture();await f.run('/candidate/cv-builder?resume_id=cv','DELETE');assert.equal(f.db.resumes.length,1);assert.deepEqual((await f.run('/candidate/cv-builder')).body.resumes,[])});
+test('taxonomy endpoint returns app-compatible arrays',async()=>{const f=fixture();const r=await f.run('/wp/job_listing_category');assert.equal(r.body[0].name,'Technology')});
