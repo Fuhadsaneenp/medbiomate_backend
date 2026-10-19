@@ -1,11 +1,11 @@
+import {renderAdminLogin} from './admin-login.js?v=2';
 import { renderAdmin, initAdmin } from './admin.js?v=1.0';
 
 let session;try{const response=await fetch('/api/admin/me',{cache:'no-store'});if(response.ok)session=(await response.json()).admin}catch{}
 if(session){
  sessionStorage.setItem('medbiomate_admin_session',JSON.stringify(session));document.querySelector('#app').innerHTML=renderAdmin();await initAdmin();
 }else{
- document.querySelector('#app').innerHTML=`<main style="max-width:420px;margin:10vh auto;padding:32px;font-family:system-ui;background:white;border-radius:12px;box-shadow:0 10px 60px #0001"><h1>Medbiomate Admin</h1><p>Sign in to manage jobs, employers, and pages.</p><form id="admin-login-form"><label>Email<input name="identity" type="email" required autocomplete="username" style="display:block;width:100%;padding:12px;margin:10px 0"></label><label>Password<input name="password" type="password" required autocomplete="current-password" style="display:block;width:100%;padding:12px;margin:10px 0"></label><button style="padding:12px 25px;background:#1967d2;border:0;border-radius:6px;color:white">Login</button><p role="status" id="login-status"></p></form><a href="/">Back to website</a></main>`;
- document.querySelector('#admin-login-form').onsubmit=async event=>{event.preventDefault();try{const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});const data=await r.json();if(!r.ok)throw Error(data.error);location.href='/admin'}catch(e){document.querySelector('#login-status').textContent=e.message}};
+ renderAdminLogin();
 }
 
 // Website recovery shares the same backend and account records as the mobile app.

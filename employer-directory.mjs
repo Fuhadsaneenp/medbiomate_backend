@@ -11,6 +11,8 @@ export function employerDirectory(employers,jobs,local={},params=new URLSearchPa
  const rows=companies.map(r=>({id:r.id,slug:r.slug,title:title(r),logo:r.metas?._employer_logo||'',categories:Object.values(r.metas?._employer_category||{}),locations:Object.values(r.metas?._employer_location||{}),openJobs:counts.get(r.slug)||0}));
  const group=field=>{const map=new Map();for(const r of rows)for(const name of new Set(r[field]))map.set(name,(map.get(name)||0)+1);return [...map].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name))};
  const categories=group('categories'),locations=group('locations');
+ const slugify=v=>String(v).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+ for(const [slugKey,nameKey,terms]of [['category_slug','category',categories],['location_slug','location',locations]])if(params.get(slugKey)&&!params.get(nameKey)){const term=terms.find(r=>slugify(r.name)===params.get(slugKey));if(term)params.set(nameKey,term.name);else params.set(nameKey,'__not_found__')}
  const q=key(params.get('q')),cat=key(params.get('category')),loc=key(params.get('location')),min=Math.max(0,Number(params.get('min_jobs'))||0);
  let filtered=rows.filter(r=>(!q||key([r.title,...r.categories,...r.locations].join(' ')).includes(q))&&(!cat||r.categories.some(v=>key(v)===cat))&&(!loc||r.locations.some(v=>key(v)===loc))&&r.openJobs>=min);
  const sort=params.get('sort');filtered.sort(sort==='az'?(a,b)=>a.title.localeCompare(b.title):sort==='za'?(a,b)=>b.title.localeCompare(a.title):(a,b)=>b.openJobs-a.openJobs||a.title.localeCompare(b.title));
