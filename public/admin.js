@@ -4370,7 +4370,7 @@ export async function initAdmin() {
       }
       switchView('job-edit');
     } else if (hash === 'employer-editor') {
-      if (!employerForm.originalSlug.value) {
+      if (!employerForm.elements.namedItem('originalSlug').value) {
         fillEmployer({});
       }
       switchView('employer-edit');
@@ -4705,7 +4705,7 @@ export async function initAdmin() {
     data.banner = document.getElementById('field-banner-img')?.value || data.banner || '';
     data.employerSlug = document.getElementById('field-employer-author')?.value || '';
     data.id = jobForm?.elements.id?.value || '';
-    data.originalSlug = jobForm?.originalSlug?.value || '';
+    data.originalSlug = jobForm?.elements.namedItem('originalSlug')?.value || '';
     data.types = Array.from(document.querySelectorAll('input[name="types"]:checked')).map(cb => cb.value);
     data.categories = Array.from(document.querySelectorAll('input[name="categories"]:checked')).map(cb => cb.value);
     data.locations = Array.from(document.querySelectorAll('input[name="locations"]:checked')).map(cb => cb.value);
@@ -4895,7 +4895,7 @@ export async function initAdmin() {
   }
 
   function updateJobPreview() {
-    const slug = jobForm.slug.value.trim();
+    const slug = jobForm.elements.namedItem('slug').value.trim();
     document.querySelector('#admin-preview').href = slug ? `/job/${encodeURIComponent(slug)}` : '#';
   }
   function updateApplicationMethodUI() {
@@ -4944,7 +4944,7 @@ export async function initAdmin() {
       const typeMap = { 'Full Time':'FULL_TIME', 'Part Time':'PART_TIME', 'Freelance':'CONTRACTOR', 'Contract':'CONTRACTOR', 'Internship':'INTERN', 'Temporary':'TEMPORARY' };
       jobForm.elements['employmentType'].value = typeMap[job.types?.[0] || job.type] || '';
     }
-    jobForm.originalSlug.value = job.slug || '';
+    jobForm.elements.namedItem('originalSlug').value = job.slug || '';
 
     // Gutenberg Title & Summary Bar Sync
     const titleText = job.title || '';
@@ -5053,13 +5053,13 @@ export async function initAdmin() {
         <th scope="row" class="check-column"><input type="checkbox" name="post[]" value="${esc(j.slug)}"></th>
         <td class="column-title">
           <div class="modern-title-line">
-            <a class="row-title" href="#job-editor" data-job-edit="${esc(j.slug)}">${esc(j.title)}</a>
+            <a class="row-title" href="#job-editor/${encodeURIComponent(j.slug)}" data-job-edit="${esc(j.slug)}">${esc(j.title)}</a>
             <span class="modern-company-text">${esc(j.company || 'Medbiomate')}</span>
             <span style="display:block;font-size:12px;color:#64748b;margin-top:3px">${j.createdBy?.name ? `Created by: ${esc(j.createdBy.name)}` : j.updatedBy?.name ? `Edited by: ${esc(j.updatedBy.name)}` : 'Creator not recorded'}</span>
             ${j.editingNames?.length ? `<span style="display:block;color:#2563eb;font-size:12px" role="status">${esc(j.editingNames.join(', '))} ${j.editingNames.length > 1 ? 'are' : 'is'} editing this job</span>` : ''}
           </div>
           <div class="row-actions">
-            <a href="#job-editor" class="row-action-link edit-link" data-job-edit="${esc(j.slug)}">Edit</a>
+            <a href="#job-editor/${encodeURIComponent(j.slug)}" class="row-action-link edit-link" data-job-edit="${esc(j.slug)}">Edit</a>
             <a href="#" class="row-action-link qe-link editinline" data-job-quick-edit="${esc(j.slug)}">Quick Edit</a>
             <a href="/job/${encodeURIComponent(j.slug)}" target="_blank" rel="noopener" class="row-action-link view-link">View ↗</a>
             <a href="#" class="row-action-link trash-link submitdelete" data-job-trash="${esc(j.slug)}">Trash</a>
@@ -5492,7 +5492,7 @@ export async function initAdmin() {
   }
 
   function updateEmployerPreview() {
-    const slug = (document.getElementById('field-employer-slug')?.value || employerForm.slug?.value || '').trim();
+    const slug = (document.getElementById('field-employer-slug')?.value || employerForm.elements.namedItem('slug')?.value || '').trim();
     const link = document.querySelector('#employer-view-link');
     if (link) link.href = slug ? `/employer/${encodeURIComponent(slug)}` : '#';
   }
@@ -5500,7 +5500,7 @@ export async function initAdmin() {
   function fillEmployer(item = {}) {
     queueMicrotask(() => employerRecovery.open(item.slug || ''));
     employerForm.reset();
-    employerForm.originalSlug.value = item.slug || '';
+    employerForm.elements.namedItem('originalSlug').value = item.slug || '';
 
     // Checklists
     const catsSet = new Set(Array.isArray(item.categories) ? item.categories : []);
@@ -6916,11 +6916,9 @@ export async function initAdmin() {
     const editBtn = e.target.closest('[data-job-edit]');
     if (editBtn) {
       e.preventDefault();
-      const job = allJobs().find(j => j.slug === editBtn.dataset.jobEdit);
-      if (job) {
-        fillJob(job);
-        location.hash = 'job-editor';
-      }
+      const route = `job-editor/${encodeURIComponent(editBtn.dataset.jobEdit)}`;
+      if (location.hash.slice(1) === route) await editReportedJob(editBtn.dataset.jobEdit, true);
+      else location.hash = route;
       return;
     }
     const qeBtn = e.target.closest('[data-job-quick-edit]');
@@ -7011,11 +7009,11 @@ export async function initAdmin() {
   });
 
   // Job Form Inputs & Submission
-  jobForm.title.addEventListener('input', () => {
-    if (!jobForm.originalSlug.value) jobForm.slug.value = jobForm.title.value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  jobForm.elements.namedItem('title').addEventListener('input', () => {
+    if (!jobForm.elements.namedItem('originalSlug').value) jobForm.elements.namedItem('slug').value = jobForm.elements.namedItem('title').value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     updateJobPreview();
   });
-  jobForm.slug.addEventListener('input', updateJobPreview);
+  jobForm.elements.namedItem('slug').addEventListener('input', updateJobPreview);
   document.getElementById('job-apply-type')?.addEventListener('change', updateApplicationMethodUI);
   const uaeLocationSelect = document.getElementById('job-address-locality');
   function syncUaeLocationRegion() {
@@ -7049,7 +7047,7 @@ export async function initAdmin() {
     const job = Object.fromEntries(fd.entries());
     if (e.submitter?.id === 'publish-job-btn') job.status = 'publish';
     job.id = jobForm.elements.id?.value || '';
-    job.originalSlug = jobForm.originalSlug.value;
+    job.originalSlug = jobForm.elements.namedItem('originalSlug').value;
     job.description = document.getElementById('job-rich-content')?.innerHTML?.trim() || job.description?.trim() || '';
     const destinationFields={'External URL':'applyUrl','By Email':'applyEmail','WhatsApp':'applyWhatsApp','Walk-in':'walkInDetails'};
     const destination=destinationFields[job.applyType];
@@ -7092,9 +7090,9 @@ export async function initAdmin() {
       job.employerUrl = `/employer/${employer.slug}`;
       job.logo = job.logo || employer.logo || '';
     }
-    job.featured = jobForm.featured.checked;
-    job.urgent = jobForm.urgent.checked;
-    job.filled = jobForm.filled.checked;
+    job.featured = jobForm.elements.namedItem('featured').checked;
+    job.urgent = jobForm.elements.namedItem('urgent').checked;
+    job.filled = jobForm.elements.namedItem('filled').checked;
     const employmentLabels = { FULL_TIME:'Full Time', PART_TIME:'Part Time', CONTRACTOR:'Freelance', TEMPORARY:'Temporary', INTERN:'Internship', VOLUNTEER:'Volunteer', PER_DIEM:'Per Diem', OTHER:'Other' };
     job.types = selectedTerms('types');
     if (!job.types.length && job.employmentType) job.types = [employmentLabels[job.employmentType] || job.employmentType];
@@ -7142,7 +7140,7 @@ export async function initAdmin() {
       if (!response.ok) throw new Error(saved.error || 'Could not save the job.');
       localJobs = localJobs.filter(x => x.slug !== job.originalSlug && x.slug !== saved.slug);
       localJobs.unshift(saved);
-      jobForm.originalSlug.value = saved.slug;
+      jobForm.elements.namedItem('originalSlug').value = saved.slug;
       document.querySelector('#admin-delete').hidden = false;
       const statusLabel = saved.status === 'publish' ? 'published' : saved.status === 'pending' ? 'saved as pending' : saved.status === 'expired' ? 'saved as expired' : 'saved as a draft';
       jobStatusState.textContent = `Job ${statusLabel} successfully.`;
@@ -7159,7 +7157,7 @@ export async function initAdmin() {
     } finally {
       if (pubBtn) {
         pubBtn.disabled = false;
-        pubBtn.textContent = jobSaveSucceeded ? 'Saved ✓' : (jobForm.originalSlug.value ? 'Update' : originalPubText);
+        pubBtn.textContent = jobSaveSucceeded ? 'Saved ✓' : (jobForm.elements.namedItem('originalSlug').value ? 'Update' : originalPubText);
         if (jobSaveSucceeded) setTimeout(() => { pubBtn.textContent = 'Update'; }, 1800);
       }
       if (draftBtn) { draftBtn.disabled = false; draftBtn.textContent = originalDraftText; }
@@ -7168,8 +7166,8 @@ export async function initAdmin() {
 
   document.querySelector('#admin-clear')?.addEventListener('click', () => fillJob({}));
   document.querySelector('#admin-delete')?.addEventListener('click', async () => {
-    const slug = jobForm.originalSlug.value;
-    if (!slug || !confirm(`Delete local job “${jobForm.title.value}”?`)) return;
+    const slug = jobForm.elements.namedItem('originalSlug').value;
+    if (!slug || !confirm(`Delete local job “${jobForm.elements.namedItem('title').value}”?`)) return;
     await fetch(`/api/local/jobs/${encodeURIComponent(slug)}`, { method: 'DELETE' });
     localJobs = localJobs.filter(x => x.slug !== slug);
     fillJob({});
@@ -7393,7 +7391,7 @@ export async function initAdmin() {
     const val = gutenbergTitleInput.value.trim();
     if (docStatusTitleEl) docStatusTitleEl.textContent = `${val || 'No title'} · Job`;
     if (summaryTitleEl) summaryTitleEl.textContent = val || 'No title';
-    if (slugInput && !jobForm.originalSlug.value && activeAdminSession.role === 'Administrator') {
+    if (slugInput && !jobForm.elements.namedItem('originalSlug').value && activeAdminSession.role === 'Administrator') {
       slugInput.value = val.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
     updateJobPreview();
@@ -7893,7 +7891,7 @@ export async function initAdmin() {
     const val = employerGutenbergTitle.value.trim();
     if (employerDocStatusTitle) employerDocStatusTitle.textContent = `${val || 'Add title'} · Employer`;
     if (employerSummaryTitle) employerSummaryTitle.textContent = val || 'Add title';
-    if (employerSlugInput && !employerForm.originalSlug.value) {
+    if (employerSlugInput && !employerForm.elements.namedItem('originalSlug').value) {
       employerSlugInput.value = val.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
     updateEmployerPreview();
@@ -8234,7 +8232,7 @@ export async function initAdmin() {
     const employer = {
       title: document.getElementById('employer-gutenberg-title')?.value.trim() || '',
       description: document.getElementById('employer-gutenberg-content')?.value.trim() || '',
-      originalSlug: employerForm.originalSlug.value,
+      originalSlug: employerForm.elements.namedItem('originalSlug').value,
       slug: (document.getElementById('field-employer-slug')?.value || '').trim() || (document.getElementById('employer-gutenberg-title')?.value || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
       status: document.getElementById('field-employer-status')?.value || 'publish',
       featured: !!document.getElementById('field-employer-featured')?.checked,
@@ -8267,7 +8265,7 @@ export async function initAdmin() {
       }
       localEmployers = localEmployers.filter(x => x.slug !== employer.originalSlug && x.slug !== saved.slug);
       localEmployers.unshift(saved);
-      employerForm.originalSlug.value = saved.slug;
+      employerForm.elements.namedItem('originalSlug').value = saved.slug;
       employerRecovery.clear();
       const deleteBtn = document.getElementById('employer-delete-btn');
       if (deleteBtn) deleteBtn.hidden = false;
@@ -8313,7 +8311,7 @@ export async function initAdmin() {
 
   // Move to trash
   document.querySelector('#employer-delete-btn')?.addEventListener('click', async () => {
-    const slug = employerForm.originalSlug.value || document.getElementById('field-employer-slug')?.value;
+    const slug = employerForm.elements.namedItem('originalSlug').value || document.getElementById('field-employer-slug')?.value;
     const title = document.getElementById('employer-gutenberg-title')?.value || 'this employer';
     if (!slug || !confirm(`Move "${title}" to trash?`)) return;
     await fetch(`/api/local/employers/${encodeURIComponent(slug)}`, { method: 'DELETE' });
