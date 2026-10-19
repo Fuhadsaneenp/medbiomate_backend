@@ -1,3 +1,4 @@
+import {employerDirectory} from './employer-directory.mjs';
 import {mergeCatalogue} from './catalogue.mjs';
 import {localSessions} from './local-session-store.mjs';
 import {profileBenchmark} from './profile-benchmark.mjs';
@@ -945,6 +946,11 @@ const server = http.createServer(async (req, res) => {
       await wpDb.query('INSERT INTO trikonet_media_library (id,payload) VALUES (?,?) ON DUPLICATE KEY UPDATE payload=VALUES(payload)',[saved.id,JSON.stringify(saved)]);
       return sendJson(req,res,201,saved);
     } catch(error) {return sendJson(req,res,400,{error:error.message || 'Image save failed.'});}
+  }
+
+  if (path === '/api/wp/employer-directory' && req.method === 'GET') {
+    await loadMemoryStore();
+    return sendJson(req,res,200,employerDirectory(memoryStore.employers||[],memoryStore.jobs||[],await readLocalDb(),requestUrl.searchParams));
   }
 
   // API: WordPress counts

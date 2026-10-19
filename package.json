@@ -11,7 +11,8 @@
     "sync:logos": "node scripts/sync-employer-logos.mjs",
     "sync:media": "node scripts/sync-wordpress-media.mjs",
     "check": "node --check server.mjs && node --check seo-api.mjs && node --check seo-job-pages.mjs",
-    "test:seo": "node --test seo-job-pages.test.mjs"
+    "test:seo": "node --test seo-job-pages.test.mjs",
+    "test:directory": "node --test employer-directory.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1143.0",
