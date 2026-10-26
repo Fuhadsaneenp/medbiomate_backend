@@ -948,6 +948,13 @@ const server = http.createServer(async (req, res) => {
     } catch(error) {return sendJson(req,res,400,{error:error.message || 'Image save failed.'});}
   }
 
+  if(path==='/api/admin/employer-options' && req.method==='GET'){
+    const admin=await currentAdminSession(req);if(!admin)return sendJson(req,res,401,{error:'Sign in to manage employers.'});
+    await loadMemoryStore();const db=await readLocalDb();
+    const rows=mergeCatalogue(memoryStore.employers||[],db.employers||[],'employer');
+    return sendJson(req,res,200,rows.map(record=>({id:record.id,slug:record.slug,title:record.title,status:record.status,content:record.content,metas:record.metas})));
+  }
+
   if (path === '/api/wp/employer-directory' && req.method === 'GET') {
     await loadMemoryStore();
     return sendJson(req,res,200,employerDirectory(memoryStore.employers||[],memoryStore.jobs||[],await readLocalDb(),requestUrl.searchParams));

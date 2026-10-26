@@ -4492,7 +4492,7 @@ export async function initAdmin() {
     if (!listEl) return;
 
     const q = (filterText || '').toLowerCase().trim();
-    const filtered = employerDataset.filter(e => !q || e.title.toLowerCase().includes(q) || (e.slug || '').toLowerCase().includes(q));
+    const filtered = employerDataset.filter(e => !q || e.title.toLowerCase().includes(q) || (e.slug || '').toLowerCase().includes(q)).slice(0,50);
     const currentVal = document.getElementById('field-employer-company-value')?.value || '';
 
     if (filtered.length === 0) {
@@ -6356,30 +6356,11 @@ export async function initAdmin() {
   let employerLoadError = false;
   async function loadImportedEmployers() {
     employerLoadError = false;
-    const records = [];
     try {
-      // Bound response size and retry transient failures without hiding companies.
-      for (let page = 1; page <= 100; page++) {
-        let batch;
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const response = await fetch(`/api/wp/employer?per_page=100&page=${page}&_fields=id,slug,title,status,metas,content`, {signal:AbortSignal.timeout(20000)});
-            if (!response.ok) throw new Error(`Companies unavailable (HTTP ${response.status})`);
-            batch = await response.json();
-            if (!Array.isArray(batch)) throw new Error('Invalid company response');
-            break;
-          } catch (error) { if (attempt === 1) throw error; }
-        }
-        records.push(...batch);
-        updateImportedEmployers(records);
-        if (batch.length < 100) return records;
-      }
-      throw new Error('Company list exceeds supported batch limit');
-    } catch (error) {
-      employerLoadError = true;
-      console.error('Imported company loading failed:', error);
-      return records;
-    }
+      const response=await fetch('/api/admin/employer-options',{signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw Error('Companies unavailable');
+      const records=await response.json();updateImportedEmployers(records);return records;
+    }catch(error){employerLoadError=true;console.error('Company options unavailable:',error);return [];}
   }
 
   // Load all data
@@ -14281,7 +14262,7 @@ export async function initAdmin() {
   const seoAdmin = initSeoAdmin(showAdminNotice);
   // Initial routing and data loading
   handleRoute();
-  await loadData();
+  void loadData().then(async () => {
   if(activeAdminSession.role==='Administrator'){
     try{
       const response=await fetch('/api/admin/seo-job-pages/main-categories');
@@ -14298,5 +14279,8 @@ export async function initAdmin() {
   }
   renderPostCategoryFilterDropdown();
   renderGutenbergPostCategoriesChecklist();
-  handleRoute();
+  const hash=location.hash.slice(1);
+  if(hash==='job-new'||hash.startsWith('job-editor'))renderGutenbergChecklists();
+  if(hash==='employer-new'||hash.startsWith('employer-editor'))renderEmployerGutenbergChecklists();
+  }).catch(error=>{console.error('Admin background loading failed:',error);showAdminNotice('Some supporting data could not load. Refresh to retry.','error');});
 }
