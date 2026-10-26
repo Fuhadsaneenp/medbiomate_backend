@@ -1,3 +1,4 @@
+import {scrollEditorSection} from './editor-section-scroll.js';
 import {buildHierarchy} from './taxonomy-tree.js';
 import {newJobDates,oneYearFromToday} from './job-date-defaults.js';
 import {matchImportedEmployer} from './job-import-matching.js';
@@ -7584,19 +7585,8 @@ export async function initAdmin() {
       const subnav = document.getElementById(`${prefix}-editor-subnav`);
       const stickyOffset = (header ? header.offsetHeight : 60) + (subnav ? subnav.offsetHeight : 52) + 20;
 
-      const canvasScrollable = canvas && (canvas.scrollHeight > canvas.clientHeight + 10) && (getComputedStyle(canvas).overflowY === 'auto' || getComputedStyle(canvas).overflowY === 'scroll');
-
-      if (canvasScrollable) {
-        const canvasRect = canvas.getBoundingClientRect();
-        const cardRect = card.getBoundingClientRect();
-        const targetTop = canvas.scrollTop + (cardRect.top - canvasRect.top) - 20;
-        canvas.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
-      } else {
-        const cardRect = card.getBoundingClientRect();
-        const scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
-        const targetTop = scrollY + cardRect.top - stickyOffset;
-        window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
-      }
+      // The admin content area may own scrolling instead of the canvas or window.
+      scrollEditorSection(card,stickyOffset);
 
       // Pulse animation
       card.classList.remove('card-highlight-pulse');
