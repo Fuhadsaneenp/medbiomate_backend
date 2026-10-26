@@ -8261,3 +8261,6 @@ mark.wp-highlight {
 }
 
 #job-form .modern-field-wrap[hidden], #job-apply-url-wrap[hidden], #job-apply-email-wrap[hidden], #job-apply-whatsapp-wrap[hidden], #job-apply-walkin-wrap[hidden] { display:none !important; }
+
+.job-link-import{margin:20px 24px;padding:20px;border:1px solid #dbe7f7;border-radius:12px;background:#f5f9ff}.job-link-import label{display:block;font-size:13px;font-weight:600;color:#334155;margin-bottom:10px}.job-link-import>div{display:flex;gap:10px}.job-link-import input{flex:1;min-width:0;border:1px solid #d5dfed;border-radius:8px;background:#fff;padding:11px 12px;font:inherit;font-size:13px}.job-link-import button{border:0;border-radius:8px;background:#2563eb;color:#fff;padding:10px 16px;cursor:pointer;font:inherit;font-size:12px}.job-link-import button:disabled{opacity:.6;cursor:wait}.job-link-import p{font-size:11px;color:#74839a;line-height:1.7;margin:10px 0 0}@media(max-width:600px){.job-link-import>div{flex-direction:column}}
+.job-import-paste{margin-top:14px;border-top:1px solid #dbe7f7;padding-top:12px}.job-import-paste summary{cursor:pointer;font-size:12px;color:#2563eb;font-weight:600}.job-import-paste textarea{box-sizing:border-box;width:100%;min-height:140px;padding:12px;border:1px solid #d5dfed;border-radius:8px;font:inherit;font-size:12px;background:#fff;resize:vertical}

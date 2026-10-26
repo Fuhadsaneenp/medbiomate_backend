@@ -1,3 +1,5 @@
+import {importJobLink,importPastedJob} from './job-link-import.mjs';
+import {rememberEmployerAddress,findEmployerAddress} from './employer-job-address.mjs';
 import {employerDirectory} from './employer-directory.mjs';
 import {mergeCatalogue} from './catalogue.mjs';
 import {localSessions} from './local-session-store.mjs';
@@ -1551,6 +1553,16 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Autosaved unfinished records are always drafts, never published overrides.
+  if(path==='/api/admin/employer-job-address' && req.method==='GET'){
+    const admin=await currentAdminSession(req);if(!admin)return sendJson(req,res,401,{error:'Sign in to load company addresses.'});
+    return sendJson(req,res,200,findEmployerAddress(await readLocalDb(),requestUrl.searchParams.get('company'),requestUrl.searchParams.get('slug')));
+  }
+  if(path==='/api/admin/import-job-link' && req.method==='POST'){
+    const admin=await currentAdminSession(req);if(!admin)return sendJson(req,res,401,{error:'Sign in to import jobs.'});
+    try{const body=await readJsonBody(req);const result=body.text?importPastedJob(String(body.text).slice(0,100000),String(body.url||'')):await importJobLink(String(body.url||''));return sendJson(req,res,200,result);}
+    catch(error){return sendJson(req,res,400,{error:error.message||'Unable to import job.'});}
+  }
+
   if (path === '/api/admin/autosave' && req.method === 'POST') {
     const admin = await currentAdminSession(req);
     if (!admin) return sendJson(req, res, 401, { error: 'Sign in to save drafts.' });
@@ -1648,6 +1660,7 @@ const server = http.createServer(async (req, res) => {
       if (!job.title?.trim()) {
         return sendJson(req, res, 400, { error: 'Job title is required' });
       }
+      if(job.status==='publish'&&(!Array.isArray(job.categories)||!job.categories.some(value=>String(value).trim())))return sendJson(req,res,400,{error:'Select at least one job category before publishing.',fields:['categories']});
       job.slug = String(job.slug || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
       const nowIso = new Date().toISOString();
       job.createdAt = job.createdAt || nowIso;
@@ -1693,6 +1706,7 @@ const server = http.createServer(async (req, res) => {
           ? existingJob.createdAt : nowIso);
       job.updatedBy={id:String(admin.userId),name:String(admin.name || 'Administrator'),email:admin.email,at:nowIso};
       const savedJob = saveJobRecord(db.jobs, refreshPublicationDate(job,nowIso), () => crypto.randomUUID(), nowIso);
+      rememberEmployerAddress(db,savedJob);
       if (db.jobRecoveryById) delete db.jobRecoveryById[String(savedJob.id)];
       await writeLocalDb(db);
       seoRepository.list(true).catch(error=>console.error('SEO refresh after job save failed:',error.message));

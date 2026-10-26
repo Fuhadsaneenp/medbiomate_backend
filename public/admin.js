@@ -1,3 +1,6 @@
+import {newJobDates,oneYearFromToday} from './job-date-defaults.js';
+import {matchImportedEmployer} from './job-import-matching.js';
+import {normalizeImportedDescription} from './imported-description.js';
 import {candidateProfileView} from './candidate-profile-view.js';
 import { signalAdminSessionChange } from './admin-session.js?v=2';
 import { createFormRecovery } from './admin-recovery.js?v=5';
@@ -4525,6 +4528,25 @@ export async function initAdmin() {
     }
   }
 
+  let employerAddressRequest=0;
+  async function applySavedEmployerAddress(company,slug){
+    const request=++employerAddressRequest;
+    const fields=['streetAddress','addressLocality','addressRegion','addressCountry','postalCode','address'];
+    const before=Object.fromEntries(fields.map(key=>[key,jobForm.elements.namedItem(key)?.value||'']));
+    try{
+      const response=await fetch(`/api/admin/employer-job-address?${new URLSearchParams({company,slug})}`,{cache:'no-store'});
+      if(!response.ok)return;const result=await response.json();
+      if(request!==employerAddressRequest||document.getElementById('field-employer-company-value')?.value!==company||!result.address)return;
+      // Do not overwrite source/imported addresses or manual changes made while loading.
+      let filled=false;
+      for(const key of fields){const field=jobForm.elements.namedItem(key);const value=result.address[key];if(!field||!value||field.value!==before[key])continue;if(field.value&&field.dataset.employerAddressAuto!=='true'&&!(key==='addressCountry'&&field.value==='AE'))continue;
+        if(field.tagName==='SELECT'&&!Array.from(field.options).some(option=>option.value===value))field.add(new Option(value,value));
+        field.value=value;field.dataset.employerAddressAuto='true';field.dispatchEvent(new Event('change',{bubbles:true}));filled=true;
+      }
+      if(filled)showAdminNotice('Company address loaded from '+result.source+'. You can edit it for this job.');
+    }catch{}
+  }
+  jobForm.addEventListener('input',event=>{if(event.target.dataset)delete event.target.dataset.employerAddressAuto;});
   function selectEmployerOption(title, logoUrl = '', slug = '', triggerPreview = true) {
     const hiddenVal = document.getElementById('field-employer-company-value');
     const select = document.getElementById('field-employer-author');
@@ -4584,7 +4606,7 @@ export async function initAdmin() {
     }
 
     renderEmployerComboboxItems('');
-    if (triggerPreview) updateJobPreview();
+    if (triggerPreview) {updateJobPreview();if(title)void applySavedEmployerAddress(title,slug);else employerAddressRequest++;}
   }
 
   // Setup Combobox Events
@@ -4915,7 +4937,51 @@ export async function initAdmin() {
     }
   }
 
+  const importHost=document.createElement('div');
+  importHost.className='job-link-import';
+  importHost.innerHTML='<label for="job-import-url">Import from a job link</label><div><input id="job-import-url" type="url" placeholder="https://company.com/careers/job"><button type="button" id="job-import-button">Import details</button></div><p id="job-import-status" role="status">Paste a link to a single job. Review the extracted details before publishing.</p>';
+  const pasteOption=document.createElement('details');pasteOption.className='job-import-paste';
+  pasteOption.innerHTML='<summary>Paste job text instead</summary><p>Paste the full hiring announcement. The importer detects the role, employer, location, requirements and application details where stated.</p><textarea id="job-import-text" rows="7" placeholder="Job title\nPaste the job description, requirements and salary here…" aria-label="Job text to import"></textarea>';
+  importHost.append(pasteOption);
+  document.querySelector('#view-job-editor .modern-editor-container')?.prepend(importHost);
+  document.getElementById('job-import-button')?.addEventListener('click',async()=>{
+    const input=document.getElementById('job-import-url'),button=document.getElementById('job-import-button'),status=document.getElementById('job-import-status');
+    const pastedText=document.getElementById('job-import-text')?.value.trim()||'';
+    if(!pastedText&&(!input.value||!input.reportValidity()))return;
+    if(input.value&&!input.reportValidity())return;
+    const hasContent=Boolean(document.getElementById('job-gutenberg-title')?.value?.trim()||(document.getElementById('job-gutenberg-content')?.value||document.getElementById('job-rich-content')?.textContent||'').trim());
+    if(hasContent&&!confirm('Replace this job’s current details with the imported information?'))return;
+    button.disabled=true;status.textContent=pastedText?'Reading pasted job details…':'Reading job details…';
+    try{
+      const response=await fetch('/api/admin/import-job-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:input.value,text:pastedText})});
+      const raw=await response.text();let result;try{result=JSON.parse(raw);}catch{throw Error('Import service is unavailable. Restart the local server and try again.');}if(!response.ok)throw Error(result.error||'Import failed');
+      const importedCompany=result.job.company;
+      const employer=matchImportedEmployer(importedCompany,allEmployers());
+      if(!employer)Object.assign(result.job,{company:'',employerSlug:'',logo:''});
+      if(employer)Object.assign(result.job,{company:employer.title,employerSlug:employer.slug,employerUrl:`/employer/${employer.slug}`,logo:employer.logo||''});
+      // Leave requirements absent from the source empty for review.
+      const identity={id:jobForm.elements.namedItem('id')?.value||'',slug:jobForm.elements.namedItem('slug')?.value||'',status:'draft'};
+      const originalSlug=jobForm.elements.namedItem('originalSlug')?.value||'';
+      if (!originalSlug) {
+        result.job.deadline = jobForm.elements['deadline'].value || oneYearFromToday();
+        result.job.expiryDate = jobForm.elements['expiryDate'].value || result.job.deadline;
+      }
+      fillJob({...result.job,...identity});jobForm.elements.namedItem('originalSlug').value=originalSlug;
+      if(employer)selectEmployerOption(employer.title,employer.logo||'',employer.slug||'',true);
+      const normalize=value=>String(value||'').toLowerCase().replace(/&amp;/g,'&').replace(/\bjobs?\b/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+      const category=normalize(result.job.category),title=normalize(result.job.title);
+      const boxes=[...document.querySelectorAll('#view-job-editor input[name="categories"]')];
+      const matches=boxes.map(box=>({box,name:normalize(box.value)})).filter(item=>item.name&&(item.name===category||item.name===title||title.includes(item.name)));
+      const selected=matches.sort((a,b)=>b.name.length-a.name.length)[0];
+      if(selected){selected.box.checked=true;selected.box.dispatchEvent(new Event('change',{bubbles:true}));}
+
+      jobForm.dispatchEvent(new Event('input',{bubbles:true}));
+      status.textContent='Details imported. '+(employer?'Existing employer selected. ':`Select an existing employer for ${importedCompany||'this job'}. `)+(selected?'Category matched. ':'Choose the closest category. ')+(result.job.minSalary?'':'Salary was not disclosed. ')+'Review missing fields before publishing.';
+    }catch(error){status.textContent=error.message;pasteOption.open=true;document.getElementById('job-import-text')?.focus();}finally{button.disabled=false;}
+  });
+
   function fillJob(job = {}) {
+    job=newJobDates(job);
     queueMicrotask(() => jobRecovery.open(job.slug || '', job.id || ''));
     jobForm.reset();
     renderGutenbergChecklists();
@@ -4958,9 +5024,9 @@ export async function initAdmin() {
     if (gutenbergTitle) gutenbergTitle.value = titleText;
 
     const gutenbergContent = document.getElementById('job-gutenberg-content');
-    if (gutenbergContent) gutenbergContent.value = job.description || '';
+    if (gutenbergContent) gutenbergContent.value = normalizeImportedDescription(job.description || '');
     const jobRichContent = document.getElementById('job-rich-content');
-    if (jobRichContent) jobRichContent.innerHTML = job.description || '';
+    if (jobRichContent) jobRichContent.innerHTML = normalizeImportedDescription(job.description || '');
 
     const publishBtn = document.getElementById('publish-job-btn');
     if (publishBtn) publishBtn.textContent = job.slug ? 'Update' : 'Publish';
@@ -7078,6 +7144,7 @@ export async function initAdmin() {
     job.types = selectedTerms('types');
     if (!job.types.length && job.employmentType) job.types = [employmentLabels[job.employmentType] || job.employmentType];
     job.categories = selectedTerms('categories');
+    if(job.status==='publish'&&!job.categories.length){jobStatusState.textContent='Select at least one job category before publishing.';document.querySelector('#checklist-categories')?.scrollIntoView({block:'center'});return;}
     job.locations = selectedTerms('locations');
     if (!job.locations.length) job.locations = [...new Set([job.addressLocality, job.addressRegion].filter(Boolean))];
     job.tags = selectedTerms('tags');
