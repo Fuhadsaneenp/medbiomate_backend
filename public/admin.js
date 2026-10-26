@@ -1,3 +1,4 @@
+import {buildHierarchy} from './taxonomy-tree.js';
 import {newJobDates,oneYearFromToday} from './job-date-defaults.js';
 import {matchImportedEmployer} from './job-import-matching.js';
 import {normalizeImportedDescription} from './imported-description.js';
@@ -8371,47 +8372,6 @@ export async function initAdmin() {
   });
 
   // Taxonomy Hierarchy Helper
-  function buildHierarchy(terms) {
-    const roots = [];
-    const byParent = {};
-    for (const term of terms) {
-      const p = (term.parent || '').trim().toLowerCase();
-      if (!p || p === 'none') {
-        roots.push(term);
-      } else {
-        if (!byParent[p]) byParent[p] = [];
-        byParent[p].push(term);
-      }
-    }
-    const ordered = [];
-    function addBranch(item, depth = 0) {
-      ordered.push({ ...item, depth });
-      const nameKey = (item.name || '').toLowerCase();
-      const slugKey = (item.slug || '').toLowerCase();
-      const children = (byParent[nameKey] || []).concat(byParent[slugKey] || []);
-      const uniqueChildren = [];
-      const seen = new Set();
-      for (const c of children) {
-        if (!seen.has(c.slug || c.name)) {
-          seen.add(c.slug || c.name);
-          uniqueChildren.push(c);
-        }
-      }
-      for (const child of uniqueChildren) {
-        addBranch(child, depth + 1);
-      }
-    }
-    for (const root of roots) {
-      addBranch(root, 0);
-    }
-    const addedSlugs = new Set(ordered.map(x => x.slug || x.name));
-    for (const term of terms) {
-      if (!addedSlugs.has(term.slug || term.name)) {
-        ordered.push({ ...term, depth: 1 });
-      }
-    }
-    return ordered;
-  }
 
   // Render All 4 Modern Taxonomy Tables
   function renderTaxonomyTables() {

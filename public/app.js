@@ -1,5 +1,5 @@
 import {renderAdminLogin} from './admin-login.js?v=2';
-import { renderAdmin, initAdmin } from './admin.js?v=20261026-job-import';
+import { renderAdmin, initAdmin } from './admin.js?v=20261026-taxonomy-fix';
 
 let session;try{const response=await fetch('/api/admin/me',{cache:'no-store'});if(response.ok)session=(await response.json()).admin}catch{}
 if(session){
