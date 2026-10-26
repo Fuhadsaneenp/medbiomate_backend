@@ -16,7 +16,7 @@ export function employerDirectory(employers,jobs,local={},params=new URLSearchPa
  const q=key(params.get('q')),cat=key(params.get('category')),loc=key(params.get('location')),min=Math.max(0,Number(params.get('min_jobs'))||0);
  let filtered=rows.filter(r=>(!q||key([r.title,...r.categories,...r.locations].join(' ')).includes(q))&&(!cat||r.categories.some(v=>key(v)===cat))&&(!loc||r.locations.some(v=>key(v)===loc))&&r.openJobs>=min);
  const sort=params.get('sort');filtered.sort(sort==='az'?(a,b)=>a.title.localeCompare(b.title):sort==='za'?(a,b)=>b.title.localeCompare(a.title):(a,b)=>b.openJobs-a.openJobs||a.title.localeCompare(b.title));
- const perPage=[12,24,48].includes(Number(params.get('per_page')))?Number(params.get('per_page')):12;
+ const perPage=[12,24,30,48].includes(Number(params.get('per_page')))?Number(params.get('per_page')):12;
  const total=filtered.length,page=Math.min(Math.max(1,Number(params.get('page'))||1),Math.max(1,Math.ceil(total/perPage)));
  return {rows:filtered.slice((page-1)*perPage,page*perPage),total,page,perPage,categories,locations};
 }

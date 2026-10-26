@@ -1057,6 +1057,11 @@ const server = http.createServer(async (req, res) => {
       if(!user||!isCandidateAccount(user))return sendJson(req,res,403,{error:'Email alerts are available to job seekers.'});
       const body=req.method==='POST'?await readJsonBody(req,1000):{};
       if(req.method==='POST'&&typeof body.enabled!=='boolean')return sendJson(req,res,400,{error:'Enabled must be true or false.'});
+      if(process.env.MEDBIOMATE_LOCAL_MODE==='1'){
+        const db=await readLocalDb();db.jobAlertPreferences ||= {};
+        if(req.method==='POST'){db.jobAlertPreferences[user.id]={enabled:body.enabled};await writeLocalDb(db);}
+        return sendJson(req,res,200,{enabled:Boolean(db.jobAlertPreferences[user.id]?.enabled),frequency:'digest',deliveryConfigured:Boolean(process.env.RESEND_API_KEY),timezone:'Asia/Dubai'});
+      }
       return sendJson(req,res,200,await jobEmailAlerts.preferences(user.id,body.enabled));
     }catch(error){console.error('Email alert preferences failed:',error.message);return sendJson(req,res,503,{error:'Email alert settings are temporarily unavailable.'});}
   }
@@ -1530,6 +1535,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path.startsWith('/api/admin/seo-job-pages') || path.startsWith('/api/seo-job-pages') || path === '/api/job-category-links' || path === '/sitemap-seo-job-pages.xml') {
+    if(path==='/api/job-category-links' && req.method==='GET' && process.env.MEDBIOMATE_LOCAL_MODE==='1'){
+      await loadMemoryStore();
+      return sendJson(req,res,200,(memoryStore.taxonomies?.categories||[]).filter(term=>Number(term.count)>0).map(term=>({slug:term.slug,href:'/category/'+term.slug,title:term.name,category:term.name,pageType:'main_category',activeJobCount:Number(term.count)})));
+    }
     await handleSeoRequest(req,res,path,requestUrl,{seoRepository,currentAdminSession,sendJson,readJsonBody});
     return;
   }
