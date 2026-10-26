@@ -1,7 +1,8 @@
+import {locationNames} from './location-tree.mjs';
 import {mergeCatalogue} from './catalogue.mjs';
 const title=r=>typeof r.title==='string'?r.title:r.title?.rendered||'';
 const key=v=>String(v||'').trim().toLowerCase();
-export function employerDirectory(employers,jobs,local={},params=new URLSearchParams()){
+export function employerDirectory(employers,jobs,local={},params=new URLSearchParams(),taxonomies={}){
  const companies=mergeCatalogue(employers,local.employers||[],'employer');
  const listings=mergeCatalogue(jobs,local.jobs||[],'job_listing');
  const ids=new Map(companies.map(r=>[String(r.id),r.slug]));
@@ -13,8 +14,9 @@ export function employerDirectory(employers,jobs,local={},params=new URLSearchPa
  const categories=group('categories'),locations=group('locations');
  const slugify=v=>String(v).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
  for(const [slugKey,nameKey,terms]of [['category_slug','category',categories],['location_slug','location',locations]])if(params.get(slugKey)&&!params.get(nameKey)){const term=terms.find(r=>slugify(r.name)===params.get(slugKey));if(term)params.set(nameKey,term.name);else params.set(nameKey,'__not_found__')}
+ const allowedLocations=locationNames(taxonomies.employerLocations||taxonomies.locations||[],params.get('location')).map(key);
  const q=key(params.get('q')),cat=key(params.get('category')),loc=key(params.get('location')),min=Math.max(0,Number(params.get('min_jobs'))||0);
- let filtered=rows.filter(r=>(!q||key([r.title,...r.categories,...r.locations].join(' ')).includes(q))&&(!cat||r.categories.some(v=>key(v)===cat))&&(!loc||r.locations.some(v=>key(v)===loc))&&r.openJobs>=min);
+ let filtered=rows.filter(r=>(!q||key([r.title,...r.categories,...r.locations].join(' ')).includes(q))&&(!cat||r.categories.some(v=>key(v)===cat))&&(!loc||r.locations.some(v=>allowedLocations.includes(key(v))))&&r.openJobs>=min);
  const sort=params.get('sort');filtered.sort(sort==='az'?(a,b)=>a.title.localeCompare(b.title):sort==='za'?(a,b)=>b.title.localeCompare(a.title):(a,b)=>b.openJobs-a.openJobs||a.title.localeCompare(b.title));
  const perPage=[12,24,30,48].includes(Number(params.get('per_page')))?Number(params.get('per_page')):12;
  const total=filtered.length,page=Math.min(Math.max(1,Number(params.get('page'))||1),Math.max(1,Math.ceil(total/perPage)));

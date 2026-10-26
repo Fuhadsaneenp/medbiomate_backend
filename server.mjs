@@ -1,3 +1,4 @@
+import {locationNames} from './location-tree.mjs';
 import {importJobLink,importPastedJob} from './job-link-import.mjs';
 import {rememberEmployerAddress,findEmployerAddress} from './employer-job-address.mjs';
 import {employerDirectory} from './employer-directory.mjs';
@@ -194,7 +195,7 @@ function fallbackRecords(type, params, local = {}, countOnly = false) {
     if (location && location !== 'Country or City') {
       filtered = filtered.filter(item => {
         const locs = Object.values(item.metas?._job_location || {});
-        return locs.some(l => l.toLowerCase() === location.toLowerCase());
+        const allowed=locationNames(memoryStore.taxonomies?.locations||[],location).map(name=>name.toLowerCase());return locs.some(l=>allowed.includes(l.toLowerCase()));
       });
     }
     if (category && category !== 'All Categories') {
@@ -222,7 +223,7 @@ function fallbackRecords(type, params, local = {}, countOnly = false) {
     if (location && location !== 'City or postcode') {
       filtered = filtered.filter(item => {
         const locs = Object.values(item.metas?._employer_location || {});
-        return locs.some(l => l.toLowerCase() === location.toLowerCase());
+        const allowed=locationNames(memoryStore.taxonomies?.locations||[],location).map(name=>name.toLowerCase());return locs.some(l=>allowed.includes(l.toLowerCase()));
       });
     }
     if (category && category !== 'All Categories') {
@@ -313,8 +314,8 @@ async function wordpressRecords(type, params, adminOptions = null) {
     } else { where.push('post_title LIKE ?'); values.push(`%${query}%`); }
   }
   if (postType === 'job_listing' && location && location !== 'Country or City') {
-    where.push("EXISTS (SELECT 1 FROM wp_term_relationships fr JOIN wp_term_taxonomy ft ON ft.term_taxonomy_id=fr.term_taxonomy_id JOIN wp_terms fn ON fn.term_id=ft.term_id WHERE fr.object_id=wp_posts.ID AND ft.taxonomy='job_listing_location' AND fn.name=?)");
-    values.push(location);
+    where.push("EXISTS (SELECT 1 FROM wp_term_relationships fr JOIN wp_term_taxonomy ft ON ft.term_taxonomy_id=fr.term_taxonomy_id JOIN wp_terms fn ON fn.term_id=ft.term_id WHERE fr.object_id=wp_posts.ID AND ft.taxonomy='job_listing_location' AND fn.name IN ("+locationNames(memoryStore.taxonomies?.locations||[],location).map(()=>'?').join(',')+"))");
+    values.push(...locationNames(memoryStore.taxonomies?.locations||[],location));
   }
   if (postType === 'job_listing' && category && category !== 'All Categories') {
     where.push("EXISTS (SELECT 1 FROM wp_term_relationships fr JOIN wp_term_taxonomy ft ON ft.term_taxonomy_id=fr.term_taxonomy_id JOIN wp_terms fn ON fn.term_id=ft.term_id WHERE fr.object_id=wp_posts.ID AND ft.taxonomy='job_listing_category' AND fn.name=?)");
@@ -512,8 +513,8 @@ async function wordpressCount(type, params, adminOptions = null) {
     } else { where.push('post_title LIKE ?'); values.push(`%${query}%`); }
   }
   if (postType === 'job_listing' && location && location !== 'Country or City') {
-    where.push("EXISTS (SELECT 1 FROM wp_term_relationships fr JOIN wp_term_taxonomy ft ON ft.term_taxonomy_id=fr.term_taxonomy_id JOIN wp_terms fn ON fn.term_id=ft.term_id WHERE fr.object_id=wp_posts.ID AND ft.taxonomy='job_listing_location' AND fn.name=?)");
-    values.push(location);
+    where.push("EXISTS (SELECT 1 FROM wp_term_relationships fr JOIN wp_term_taxonomy ft ON ft.term_taxonomy_id=fr.term_taxonomy_id JOIN wp_terms fn ON fn.term_id=ft.term_id WHERE fr.object_id=wp_posts.ID AND ft.taxonomy='job_listing_location' AND fn.name IN ("+locationNames(memoryStore.taxonomies?.locations||[],location).map(()=>'?').join(',')+"))");
+    values.push(...locationNames(memoryStore.taxonomies?.locations||[],location));
   }
   if (postType === 'job_listing' && category && category !== 'All Categories') {
     where.push("EXISTS (SELECT 1 FROM wp_term_relationships fr JOIN wp_term_taxonomy ft ON ft.term_taxonomy_id=fr.term_taxonomy_id JOIN wp_terms fn ON fn.term_id=ft.term_id WHERE fr.object_id=wp_posts.ID AND ft.taxonomy='job_listing_category' AND fn.name=?)");
@@ -959,7 +960,7 @@ const server = http.createServer(async (req, res) => {
 
   if (path === '/api/wp/employer-directory' && req.method === 'GET') {
     await loadMemoryStore();
-    return sendJson(req,res,200,employerDirectory(memoryStore.employers||[],memoryStore.jobs||[],await readLocalDb(),requestUrl.searchParams));
+    return sendJson(req,res,200,employerDirectory(memoryStore.employers||[],memoryStore.jobs||[],await readLocalDb(),requestUrl.searchParams,memoryStore.taxonomies||{}));
   }
 
   // API: WordPress counts
