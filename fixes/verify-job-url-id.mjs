@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync(process.argv[2],'utf8');
+const body=source.match(/async function numericJobId\(job, jobs = \[\]\) \{([\s\S]*?)\n\}/)?.[1];
+assert.ok(body,'Updated allocator must exist');
+const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+const pool={query:async(sql,args)=>{
+ assert.ok(sql.startsWith('SELECT '),'Allocation must not require database writes or DDL');
+ return sql.includes('MAX(id)')?[[{highest:1000000888}]]:[[...(args?.[0]==='legacy'?[{id:1000000123}]:[])]];
+}};
+const allocate=new AsyncFunction('wpDb','job','jobs',body);
+const rows=[{id:'old',urlJobId:'1000000900'}];
+assert.equal(await allocate(pool,{id:'legacy'},rows),'1000000123');
+const first=await allocate(pool,{id:'new-a'},rows);assert.equal(first,'1000000901');
+rows.push({id:'new-a',urlJobId:first});
+assert.equal(await allocate(pool,{id:'new-b'},rows),'1000000902');
+assert.equal(await allocate(pool,{id:'123'},rows),'123');
+assert.equal(await allocate(pool,{id:'x',urlJobId:'456'},rows),'456');
+assert.ok(source.includes('await numericJobId(identity, [...db.jobs, ...(memoryStore.jobs || [])])'));
+console.log('PASS: read-only SQL, legacy URL preservation, unique sequential IDs, existing and numeric IDs');

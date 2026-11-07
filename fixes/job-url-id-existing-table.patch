@@ -1,10 +1,42 @@
 --- a/backend/server.mjs
 +++ b/backend/server.mjs
-@@ -118,7 +118,6 @@
+@@ -114,14 +114,24 @@
+ const adminLoginGuard=createAdminLoginGuard(wpDb);
+ const acquireJobSave=createJobSaveLock(wpDb,{localMode:process.env.MEDBIOMATE_LOCAL_MODE==='1',namespace:dbConfig.database});
+ const emsSync = createEmsSync(wpDb);
+-async function numericJobId(job) {
++async function numericJobId(job, jobs = []) {
    if (job?.urlJobId) return job.urlJobId;
-   if(process.env.MEDBIOMATE_LOCAL_MODE==='1'&&!/^[1-9]\d*$/.test(String(job?.id||''))) return String(Date.now());
+-  if(process.env.MEDBIOMATE_LOCAL_MODE==='1'&&!/^[1-9]\d*$/.test(String(job?.id||''))) return String(Date.now());
    if (/^[1-9]\d*$/.test(String(job?.id || ''))) return String(job.id);
 -  await wpDb.query(`CREATE TABLE IF NOT EXISTS trikonet_job_url_ids (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, record_id VARCHAR(100) NOT NULL UNIQUE) ENGINE=InnoDB AUTO_INCREMENT=1000000000`);
-   await wpDb.query('INSERT IGNORE INTO trikonet_job_url_ids (record_id) VALUES (?)', [String(job.id)]);
-   const [rows] = await wpDb.query('SELECT id FROM trikonet_job_url_ids WHERE record_id=?', [String(job.id)]);
-   return String(rows[0].id);
+-  await wpDb.query('INSERT IGNORE INTO trikonet_job_url_ids (record_id) VALUES (?)', [String(job.id)]);
+-  const [rows] = await wpDb.query('SELECT id FROM trikonet_job_url_ids WHERE record_id=?', [String(job.id)]);
+-  return String(rows[0].id);
++  let highest = 1000000000;
++  if (process.env.MEDBIOMATE_LOCAL_MODE !== '1') {
++    // Legacy mappings are read-only. New IDs persist with the job under acquireJobSave.
++    const [existing] = await wpDb.query('SELECT id FROM trikonet_job_url_ids WHERE record_id=?', [String(job.id)]);
++    if (existing[0]) return String(existing[0].id);
++    const [rows] = await wpDb.query('SELECT MAX(id) AS highest FROM trikonet_job_url_ids');
++    highest = Math.max(highest, Number(rows[0]?.highest) || 0);
++  }
++  for (const saved of jobs) {
++    for (const value of [saved.urlJobId, saved.id]) {
++      if (/^[1-9]\d*$/.test(String(value || ''))) highest = Math.max(highest, Number(value));
++    }
++  }
++  if (!Number.isSafeInteger(highest + 1)) throw Error('Job URL ID range exhausted');
++  return String(highest + 1);
+ }
+ const archivedMedia=createArchivedMedia(wpDb);
+ const mediaStore = createMediaStore(wpDb,{rewrite:archivedMedia.rewrite});
+@@ -1880,7 +1890,7 @@
+       const existingJob = existingIndex >= 0 ? db.jobs[existingIndex] : null;
+       const identity = existingJob || { ...job, id:crypto.randomUUID() };
+       job.id = identity.id;
+-      job = applyJobUrl(job, existingJob, await numericJobId(identity), admin.role === 'Administrator');
++      job = applyJobUrl(job, existingJob, await numericJobId(identity, [...db.jobs, ...(memoryStore.jobs || [])]), admin.role === 'Administrator');
+       if (!existingJob || job.slug !== existingJob.slug) {
+         job.slug = uniqueJobSlug(job.slug,[...db.jobs,...(memoryStore.jobs || [])],job.id);
+         job.publicPath = `/jobs/${job.slug}`;
