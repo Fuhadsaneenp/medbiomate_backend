@@ -1,0 +1,10 @@
+--- a/backend/state-safety.mjs
++++ b/backend/state-safety.mjs
+@@ -14,6 +14,7 @@
+  if(expected&&crypto.createHash('sha256').update(r[0].payload).digest('hex')!==expected)throw Error('Data changed during this request. Refresh and retry.');
+  assertSafeState(JSON.parse(r[0].payload),next);
+  await c.query('INSERT INTO medbiomate_state_recovery (payload) SELECT payload FROM trikonet_app_state WHERE state_key=\'main\' AND NOT EXISTS (SELECT 1 FROM medbiomate_state_recovery WHERE created_at>NOW()-INTERVAL 1 HOUR)');
++ await c.query('DELETE FROM medbiomate_state_recovery WHERE id < (SELECT oldest FROM (SELECT MIN(id) AS oldest FROM (SELECT id FROM medbiomate_state_recovery ORDER BY id DESC LIMIT 3) recent) cutoff)');
+  await c.query("UPDATE trikonet_app_state SET payload=? WHERE state_key='main'",[JSON.stringify(next)]);await c.commit();
+  }catch(e){await c.rollback();throw e}finally{c.release()}
+ }
