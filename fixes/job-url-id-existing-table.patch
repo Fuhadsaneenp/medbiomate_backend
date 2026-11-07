@@ -1,0 +1,10 @@
+--- a/backend/server.mjs
++++ b/backend/server.mjs
+@@ -118,7 +118,6 @@
+   if (job?.urlJobId) return job.urlJobId;
+   if(process.env.MEDBIOMATE_LOCAL_MODE==='1'&&!/^[1-9]\d*$/.test(String(job?.id||''))) return String(Date.now());
+   if (/^[1-9]\d*$/.test(String(job?.id || ''))) return String(job.id);
+-  await wpDb.query(`CREATE TABLE IF NOT EXISTS trikonet_job_url_ids (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, record_id VARCHAR(100) NOT NULL UNIQUE) ENGINE=InnoDB AUTO_INCREMENT=1000000000`);
+   await wpDb.query('INSERT IGNORE INTO trikonet_job_url_ids (record_id) VALUES (?)', [String(job.id)]);
+   const [rows] = await wpDb.query('SELECT id FROM trikonet_job_url_ids WHERE record_id=?', [String(job.id)]);
+   return String(rows[0].id);
