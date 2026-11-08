@@ -1,0 +1,182 @@
+--- a/backend/server.mjs
++++ b/backend/server.mjs
+@@ -98,6 +98,9 @@
+       password: process.env.MEDBIOMATE_DB_PASSWORD || '',
+       database: process.env.MEDBIOMATE_DB_NAME || 'medbiomate',
+       connectionLimit: 5,
++      maxIdle: 2,
++      idleTimeout: 10000,
++      enableKeepAlive: true,
+       dateStrings: true
+     }
+   : {
+@@ -106,6 +109,9 @@
+       password: process.env.MEDBIOMATE_DB_PASSWORD || '',
+       database: process.env.MEDBIOMATE_DB_NAME || 'medbiomate',
+       connectionLimit: 5,
++      maxIdle: 2,
++      idleTimeout: 10000,
++      enableKeepAlive: true,
+       dateStrings: true
+     };
+ 
+@@ -793,8 +799,8 @@
+ 
+ const adminSessions = process.env.MEDBIOMATE_LOCAL_MODE === '1' ? await localSessions(join(dataRoot,'admin-sessions.json')) : createAdminSessionStore(wpDb);
+ const currentAdminSession = async req => {
+-  try { return await adminSessions.get(cookieValue(req, 'medbiomate_admin_session')); }
+-  catch { return null; } // Never grant access if session storage is unavailable.
++  // Storage failures must return a service error, not falsely expire a valid login.
++  return await adminSessions.get(cookieValue(req, 'medbiomate_admin_session'));
+ };
+ 
+ function getSessionCookieHeader(req, token, maxAge = 604800) {
+@@ -1829,7 +1835,7 @@
+     return sendJson(req,res,200,{slug:job.slug,publicPath:publicJobPath(job),job});
+   }
+   if (path === '/api/local/jobs' && req.method === 'GET') {
+-    const db = await readLocalDb();
++    const db = await readLocalDb({catalogueOnly:true});
+     const adminView = requestUrl.searchParams.get('admin') === '1';
+     if (adminView && !await currentAdminSession(req)) return sendJson(req,res,401,{error:'Sign in to manage jobs.'});
+     return sendJson(req, res, 200, adminView ? db.jobs : db.jobs.filter(isPublicRecord));
+@@ -1837,7 +1843,7 @@
+ 
+   if (path.startsWith('/api/local/jobs/') && req.method === 'GET') {
+     const slug = decodeURIComponent(path.slice('/api/local/jobs/'.length));
+-    const db = await readLocalDb();
++    const db = await readLocalDb({catalogueOnly:true});
+     const adminView = requestUrl.searchParams.get('admin') === '1';
+     if (adminView && !await currentAdminSession(req)) return sendJson(req,res,401,{error:'Sign in to manage jobs.'});
+     const job = db.jobs.find(item => item.slug === slug && (adminView || isPublicRecord(item)));
+@@ -1870,6 +1876,8 @@
+         job.expiryDate = job.expiryDate || job.deadline;
+       }
+ 
++      // Process only this job's media before holding the shared save lock.
++      job = await mediaStore.publish(await mediaStore.normalize(job), 'job');
+       const formattedDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+       releaseJobSave=await acquireJobSave();
+       const db = await readLocalDb();
+@@ -1908,7 +1916,7 @@
+       const savedJob = saveJobRecord(db.jobs, refreshPublicationDate(job,nowIso), () => crypto.randomUUID(), nowIso);
+       rememberEmployerAddress(db,savedJob);
+       if (db.jobRecoveryById) delete db.jobRecoveryById[String(savedJob.id)];
+-      await writeLocalDb(db);
++      await writeLocalDb(db, {skipMedia:true});
+       seoRepository.list(true).catch(error=>console.error('SEO refresh after job save failed:',error.message));
+       emsSync.queue(savedJob, emsJobOperator(savedJob, db.users || [])).then(() => emsSync.flush())
+         .catch(error => console.error('EMS sync queue failed:', error.message));
+@@ -1930,7 +1938,7 @@
+ 
+   // API: Local Employers
+   if (path === '/api/local/employers' && req.method === 'GET') {
+-    const db = await readLocalDb();
++    const db = await readLocalDb({catalogueOnly:true});
+     const adminView = requestUrl.searchParams.get('admin') === '1';
+     if (adminView && !await currentAdminSession(req)) return sendJson(req,res,401,{error:'Sign in to manage employers.'});
+     return sendJson(req, res, 200, adminView ? db.employers : db.employers.filter(isPublicRecord));
+@@ -1938,7 +1946,7 @@
+ 
+   if (path.startsWith('/api/local/employers/') && req.method === 'GET') {
+     const slug = decodeURIComponent(path.slice('/api/local/employers/'.length));
+-    const db = await readLocalDb();
++    const db = await readLocalDb({catalogueOnly:true});
+     const adminView = requestUrl.searchParams.get('admin') === '1';
+     if (adminView && !await currentAdminSession(req)) return sendJson(req,res,401,{error:'Sign in to manage employers.'});
+     const employer = db.employers.find(item => item.slug === slug && (adminView || isPublicRecord(item)));
+--- a/backend/admin-session-store.mjs
++++ b/backend/admin-session-store.mjs
+@@ -17,7 +17,14 @@
+     async get(token) {
+       if (!token || !/^[a-f0-9-]{36}$/.test(token)) return null;
+       await ensure();
+-      const [rows] = await db.query('SELECT payload FROM medbiomate_admin_sessions WHERE token_hash = ? AND expires_at > ?', [hash(token), Date.now()]);
++      const read = () => db.query('SELECT payload FROM medbiomate_admin_sessions WHERE token_hash = ? AND expires_at > ?', [hash(token), Date.now()]);
++      let result;
++      try { result = await read(); }
++      catch (error) {
++        if (!['ECONNRESET','EPIPE','PROTOCOL_CONNECTION_LOST'].includes(error.code)) throw error;
++        result = await read(); // Retry only this read; never replay a write.
++      }
++      const [rows] = result;
+       if (!rows.length) return null;
+       const admin = JSON.parse(rows[0].payload);
+       return ['Administrator', 'Editor', 'Content Editor'].includes(admin.role) && admin.expiresAt > Date.now() ? admin : null;
+--- a/backend/public/admin.js
++++ b/backend/public/admin.js
+@@ -3800,15 +3800,16 @@
+   });
+ 
+   // The browser copy is only for rendering the header. The HttpOnly cookie is
+-  // authoritative and is cleared whenever the Node process is redeployed.
++  // authoritative and persists across API restarts.
+   try {
+     const sessionResponse = await fetch('/api/admin/me', { cache: 'no-store' });
+-    if (!sessionResponse.ok) {
++    if (sessionResponse.status === 401) {
+       localStorage.removeItem('medbiomate_admin_session');
+       sessionStorage.removeItem('medbiomate_admin_session');
+       location.replace('/admin-login?reason=session-expired');
+       return;
+     }
++    if (!sessionResponse.ok) throw Error('Session storage temporarily unavailable');
+     activeAdminSession = (await sessionResponse.json()).admin || {};
+   } catch {
+     showAdminNotice('Unable to verify your administrator session. Please refresh and try again.', 'error');
+@@ -7175,11 +7176,23 @@
+     document.querySelectorAll('[data-deadline-days]').forEach(item => item.classList.toggle('active', item === button));
+   }));
+ 
++  function promptJobSignIn() {
++    const message = 'Your administrator session expired. Keep this editor open, sign in in a new tab, then return and click Publish again.';
++    jobStatusState.textContent = message + ' ';
++    const link = document.createElement('a');
++    link.href = '/admin-login'; link.target = '_blank'; link.rel = 'noopener';
++    link.textContent = 'Sign in in a new tab';
++    jobStatusState.append(link);
++    showAdminNotice(message, 'error');
++  }
+   let jobSubmitting=false;
+   jobForm.addEventListener('submit', async e => {
+     e.preventDefault();
+     if(jobSubmitting)return;jobSubmitting=true;
+     try{
++    const sessionCheck = await fetch('/api/admin/me', {cache:'no-store', credentials:'include'});
++    if (sessionCheck.status === 401) { promptJobSignIn(); return; }
++    if (!sessionCheck.ok) throw Error('The server could not verify your session. Your entered details are still here. Please retry shortly.');
+     await jobRecovery.flush();
+     e.preventDefault();
+     jobStatusState.textContent = 'Saving…';
+@@ -7284,6 +7297,7 @@
+         signal: AbortSignal.timeout(45000)
+       });
+       const saved = await response.json();
++      if (response.status === 401) { promptJobSignIn(); return; }
+       if (!response.ok) throw new Error(saved.error || 'Could not save the job.');
+       localJobs = localJobs.filter(x => x.slug !== job.originalSlug && x.slug !== saved.slug);
+       localJobs.unshift(saved);
+--- a/backend/public/app.js
++++ b/backend/public/app.js
+@@ -1,5 +1,5 @@
+ import {renderAdminLogin} from './admin-login.js?v=2';
+-import { renderAdmin, initAdmin } from './admin.js?v=20261031-unique-editor';
++import { renderAdmin, initAdmin } from './admin.js?v=20261108-session-save';
+ 
+ let session;try{const response=await fetch('/api/admin/me',{cache:'no-store'});if(response.ok)session=(await response.json()).admin}catch{}
+ if(session){
+--- a/backend/public/index.html
++++ b/backend/public/index.html
+@@ -7,10 +7,10 @@
+   <title>Medbiomate Admin Console</title>
+   <link rel="icon" href="/assets/favicon-192.png?v=medbiomate-20261026">
+   <link rel="stylesheet" href="/admin-assets/admin-base.css?v=1">
+-  <link rel="stylesheet" href="/admin-assets/admin.css?v=20261031-unique-editor">
++  <link rel="stylesheet" href="/admin-assets/admin.css?v=20261108-session-save">
+ </head>
+ <body>
+   <div id="app"></div>
+-  <script type="module" src="/admin-assets/app.js?v=20261031-unique-editor"></script>
++  <script type="module" src="/admin-assets/app.js?v=20261108-session-save"></script>
+ </body>
+ </html>

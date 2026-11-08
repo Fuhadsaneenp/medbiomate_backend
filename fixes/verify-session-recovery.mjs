@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const code=fs.readFileSync(process.argv[2],'utf8');
+const {createAdminSessionStore}=await import('data:text/javascript,'+encodeURIComponent(code));
+const token='12345678-1234-1234-1234-123456789abc';
+let reads=0;
+const admin={role:'Administrator',expiresAt:Date.now()+60000};
+const pool={query:async(sql)=>{if(sql.startsWith('CREATE'))return [];reads++;if(reads===1)throw Object.assign(Error('socket reset'),{code:'ECONNRESET'});return [[{payload:JSON.stringify(admin)}]];}};
+assert.deepEqual(await createAdminSessionStore(pool).get(token),admin);assert.equal(reads,2);
+const denied=createAdminSessionStore({query:async sql=>sql.startsWith('CREATE')?[]:[[]]});assert.equal(await denied.get(token),null);
+const expired=createAdminSessionStore({query:async sql=>sql.startsWith('CREATE')?[]:[[{payload:JSON.stringify({...admin,expiresAt:Date.now()-1})}]]});assert.equal(await expired.get(token),null);
+const unavailable=createAdminSessionStore({query:async sql=>{if(sql.startsWith('CREATE'))return [];throw Object.assign(Error('unavailable'),{code:'ECONNRESET'});}});await assert.rejects(unavailable.get(token),/unavailable/);
+assert.equal(await denied.get('invalid'),null);
+console.log('PASS: transient reads recover; expired, absent and invalid tokens remain denied; persistent database errors propagate');
